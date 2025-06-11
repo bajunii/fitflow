@@ -30,7 +30,7 @@ function App() {
   // Simple Home component
   const Home = () => (
     <div>
-      <h2>Welcome to the Fitness Center App</h2>
+      <h2>Welcome to the Fitflow App</h2>
       <p>This is the public home page.</p>
     </div>
   );
@@ -41,7 +41,7 @@ function App() {
         <div className="App">
           <Navbar /> {/* Add Navbar */}
           <header className="App-header">
-            <h1>Fitness Center App</h1>
+            <h1>Fitflow App</h1>
           </header>
           <main>
             <Routes>

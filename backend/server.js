@@ -68,25 +68,64 @@ app.get('/', (req, res) => {
 // User Registration Endpoint
 app.post('/api/auth/register', async (req, res) => {
   try {
-    const { username, password } = req.body;
+    const { username, password, email, name } = req.body;
+    
+    // Validate required fields
     if (!username || !password) {
-        return res.status(400).json({ message: 'Username and password are required.' });
+      return res.status(400).json({ message: 'Username and password are required.' });
     }
-    const existingUser = await User.findOne({ username: username });
+
+    // Check if username already exists
+    const existingUser = await User.findOne({ 
+      $or: [
+        { username: username },
+        { email: email }
+      ]
+    });
+
     if (existingUser) {
-      return res.status(400).json({ message: 'User already exists' });
+      if (existingUser.username === username) {
+        return res.status(400).json({ message: 'Username already exists' });
+      }
+      if (existingUser.email === email) {
+        return res.status(400).json({ message: 'Email already exists' });
+      }
     }
+
+    // Create new user with all fields
     const hashedPassword = await bcrypt.hash(password, 10);
-    const newUser = new User({ username, password: hashedPassword });
+    const newUser = new User({
+      username,
+      password: hashedPassword,
+      email: email || '',  // Make email optional but empty string if not provided
+      name: name || '',    // Make name optional but empty string if not provided
+      workouts: [],
+      goals: [],
+      transactions: []
+    });
+
+    // Check if object creation failed
+    if (!newUser) {
+      throw new Error('Failed to create user object');
+    }
+
     await newUser.save();
-    console.log('User registered:', newUser.username, newUser._id);
-    res.status(201).json({ message: 'User registered successfully', userId: newUser._id });
+    console.log('User registered successfully:', newUser.username, newUser._id);
+    
+    res.status(201).json({ 
+      message: 'User registered successfully', 
+      userId: newUser._id,
+      username: newUser.username 
+    });
   } catch (error) {
     console.error('Registration error:', error);
     if (error.code === 11000) {
-        return res.status(400).json({ message: 'Username already exists.' });
+      return res.status(400).json({ message: 'Username or email already exists.' });
     }
-    res.status(500).json({ message: 'Server error during registration' });
+    res.status(500).json({ 
+      message: 'Server error during registration',
+      error: error.message 
+    });
   }
 });
 
