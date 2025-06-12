@@ -91,7 +91,7 @@ function WorkoutList({ newWorkout }) { // newWorkout prop to trigger refresh if 
               Delete
             </button>
             {/* Placeholder for Edit button */}
-            {/* <button style={{ marginLeft: '10px' }}>Edit</button> */}
+            { <button style={{ marginLeft: '10px' }}>Edit</button> }
           </li>
         ))}
       </ul>

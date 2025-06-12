@@ -122,6 +122,9 @@ app.post('/api/auth/register', async (req, res) => {
     if (error.code === 11000) {
       return res.status(400).json({ message: 'Username or email already exists.' });
     }
+    if (error.message === 'Failed to create user object') {
+      return res.status(400).json({ message: 'Registration failed. Please try again.' });
+    }
     res.status(500).json({ 
       message: 'Server error during registration',
       error: error.message 
