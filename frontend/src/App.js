@@ -6,6 +6,8 @@ import Registration from './components/Registration';
 import Login from './components/Login';
 import Dashboard from './components/Dashboard';
 import PaymentPage from './components/PaymentPage';
+import PaypalSuccess from './components/PaypalSuccess';
+import PaypalCancel from './components/PaypalCancel';
 import GoalsPage from './components/GoalsPage';
 import ProgressPage from './pages/ProgressPage'; // Import ProgressPage
 import PrivateRoute from './components/PrivateRoute';
@@ -87,6 +89,8 @@ function App() {
               <Route path="/payment" element={<PrivateRoute />}>
                 <Route index element={<PaymentPage />} />
               </Route>
+              <Route path="/paypal/success" element={<PaypalSuccess />} />
+              <Route path="/paypal/cancel" element={<PaypalCancel />} />
             </Routes>
           </main>
           <Footer />

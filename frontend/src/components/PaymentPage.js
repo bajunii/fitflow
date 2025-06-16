@@ -85,12 +85,15 @@ function PaymentPage() {
         },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      // The backend sends back an orderID and potentially an approveLink
-      // For this simulation, we'll just display a message.
-      // In a real app, you'd use PayPal SDK or redirect to response.data.approveLink
-      setPaypalMessage(`PayPal order created! Order ID: ${response.data.orderID}. Simulated approve link: ${response.data.approveLink}`);
-      // Potentially: window.location.href = response.data.approveLink; (if direct redirect is desired)
-      setPaypalAmount('');
+      // The backend sends back an orderID and an approveLink
+      // Redirect the user to PayPal's approval page
+      if (response.data.approveLink) {
+        window.location.href = response.data.approveLink;
+      } else {
+        setPaypalError('Could not get PayPal approval link. Please try again.');
+        console.error('PayPal create order error: No approveLink received');
+      }
+      // setPaypalAmount(''); // Keep this commented or remove, as page will redirect
     } catch (err) {
       setPaypalError(err.response?.data?.message || 'PayPal order creation failed.');
       console.error('PayPal create order error:', err);

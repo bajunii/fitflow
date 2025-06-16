@@ -15,25 +15,66 @@ This guide outlines the general steps and considerations for deploying the Node.
 *   **Database:**
     *   **Managed Database Services:** AWS RDS, Google Cloud SQL, Azure Database services, MongoDB Atlas, ElephantSQL (for PostgreSQL). Recommended for production as they handle backups, scaling, and maintenance.
 
-### 2. Environment Variables
-
-Critical for security and configuration. **Never hardcode credentials or sensitive information.**
-*   **Backend:**
-    *   `PORT`: Port the server will listen on (often provided by the hosting platform).
-    *   `NODE_ENV`: Set to `production`.
-    *   `JWT_SECRET`: A strong, unique secret key for signing JSON Web Tokens.
-    *   `DATABASE_URL`: Connection string for your chosen persistent database.
-    *   `MPESA_BUSINESS_SHORT_CODE`, `MPESA_PASSKEY`, `MPESA_CALLBACK_URL_BASE`: Actual Mpesa credentials and the base URL for your deployed callback.
-    *   `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_API_BASE_URL` (use `https://api-m.paypal.com` for live), `PAYPAL_WEBHOOK_ID`: Actual PayPal credentials and webhook ID.
-*   **Frontend:**
-    *   `REACT_APP_API_BASE_URL`: The URL of your deployed backend API (e.g., `https://api.yourdomain.com`).
-*   **Management:** Hosting platforms provide ways to set environment variables securely. For local development, use `.env` files (and ensure `.env` is in `.gitignore`).
-
-### 3. HTTPS Configuration
+### 2. HTTPS Configuration
 
 Essential for security, especially with login and payment processing.
 *   Most PaaS and static hosting providers (Vercel, Netlify, Heroku) offer free, auto-renewing SSL/TLS certificates (often via Let's Encrypt).
 *   If using IaaS (like EC2), you'll need to configure HTTPS manually using a reverse proxy like Nginx or Apache with Certbot/Let's Encrypt, or use a load balancer (e.g., AWS ELB) that handles SSL termination.
+
+## Payment Gateway Configuration
+
+To enable M-Pesa and PayPal payments, you must configure several environment variables in the backend. These are typically set in a `.env` file in the `backend` directory or directly as environment variables in your hosting platform.
+
+Refer to `backend/.env.example` for a full list of required variables.
+
+### M-Pesa Configuration
+
+*   `MPESA_ENVIRONMENT`: Set to `sandbox` for testing or `live` for production.
+*   `MPESA_CONSUMER_KEY`: Your M-Pesa application's consumer key from the Safaricom Daraja portal.
+*   `MPESA_CONSUMER_SECRET`: Your M-Pesa application's consumer secret.
+*   `MPESA_SHORTCODE`: Your organization's M-Pesa shortcode (Paybill or Till Number).
+*   `MPESA_PASSKEY`: The Lipa Na M-Pesa Online Passkey associated with your shortcode.
+*   `MPESA_CALLBACK_URL`: **Crucial for status updates.** This URL **must be publicly accessible and HTTPS** for Safaricom to send payment status callbacks. For local development, use a tool like `ngrok` to expose your local server (e.g., `ngrok http 5000` would give you an HTTPS URL to use). For production, this will be `https://yourdomain.com/api/payments/mpesa/callback`.
+*   `MPESA_TRANSACTION_TYPE`: Typically `CustomerPayBillOnline`. Check your M-Pesa account type.
+
+**Example M-Pesa .env entries:**
+```
+MPESA_ENVIRONMENT=sandbox
+MPESA_CONSUMER_KEY=your_actual_consumer_key
+MPESA_CONSUMER_SECRET=your_actual_consumer_secret
+MPESA_SHORTCODE=174379
+MPESA_PASSKEY=your_actual_passkey
+MPESA_CALLBACK_URL=https://your_public_domain.com/api/payments/mpesa/callback
+MPESA_TRANSACTION_TYPE=CustomerPayBillOnline
+```
+
+### PayPal Configuration
+
+*   `PAYPAL_ENVIRONMENT`: Set to `sandbox` for testing or `live` for production.
+*   `PAYPAL_CLIENT_ID`: Your PayPal REST API application's Client ID from the PayPal Developer Dashboard.
+*   `PAYPAL_CLIENT_SECRET`: Your PayPal REST API application's Secret.
+*   `PAYPAL_WEBHOOK_ID`: The ID of the webhook you configured in your PayPal Developer Dashboard to receive payment events. **Ensure the webhook is configured to point to `https://yourdomain.com/api/payments/paypal/webhook` and subscribed to relevant events (e.g., `CHECKOUT.ORDER.APPROVED`, `PAYMENT.CAPTURE.COMPLETED`, `PAYMENT.CAPTURE.DENIED`).**
+*   `PAYPAL_RETURN_URL`: The URL on your frontend where users are redirected after approving a payment on PayPal. (e.g., `http://localhost:3000/paypal/success` or `https://yourdomain.com/paypal/success`).
+*   `PAYPAL_CANCEL_URL`: The URL on your frontend where users are redirected if they cancel a payment on PayPal. (e.g., `http://localhost:3000/paypal/cancel` or `https://yourdomain.com/paypal/cancel`).
+
+**Example PayPal .env entries:**
+```
+PAYPAL_ENVIRONMENT=sandbox
+PAYPAL_CLIENT_ID=your_actual_paypal_client_id
+PAYPAL_CLIENT_SECRET=your_actual_paypal_secret
+PAYPAL_WEBHOOK_ID=your_actual_paypal_webhook_id
+PAYPAL_RETURN_URL=https://yourdomain.com/paypal/success
+PAYPAL_CANCEL_URL=https://yourdomain.com/paypal/cancel
+```
+
+**Important Security Note for PayPal Webhooks:**
+The current implementation of PayPal webhook signature verification (`backend/server.js`) contains a placeholder. **For a production environment, you MUST replace this placeholder with a full and robust signature verification mechanism** as per PayPal's security guidelines to prevent fraudulent webhook calls. This typically involves using an official PayPal SDK or manually implementing the cryptographic checks.
+
+### General Recommendations
+*   Always use strong, unique secrets for JWT, M-Pesa, and PayPal.
+*   Store your `.env` file securely and never commit it to version control (ensure `backend/.env` is in `backend/.gitignore`).
+*   Thoroughly test payment functionalities in sandbox mode before going live.
+*   Ensure your server is configured for HTTPS in production, especially for callback and webhook URLs.
 
 ## II. Backend Deployment (Node.js)
 
@@ -60,20 +101,11 @@ Essential for security, especially with login and payment processing.
 
 1.  **Create an App:** On your chosen hosting platform.
 2.  **Connect Git Repository:** Link your GitHub/GitLab repository for CI/CD.
-3.  **Set Environment Variables:** Through the platform's dashboard.
+3.  **Set Environment Variables:** Through the platform's dashboard. **Note:** Specific payment gateway variables are detailed in the "Payment Gateway Configuration" section. Other variables like `PORT`, `NODE_ENV`, `JWT_SECRET`, `DATABASE_URL` are also needed.
 4.  **Define Start Script:** Ensure your `package.json` has a `scripts.start` command (e.g., `node server.js`). Platforms often use this.
 5.  **Procfile (Heroku specific):** May be needed, e.g., `web: node server.js`.
 6.  **Push to Deploy:** Push your code to the designated branch (e.g., `main` or `master`). The platform should auto-build and deploy.
 7.  **Check Logs:** Monitor deployment logs for any errors.
-
-### 4. Payment Gateway Callback URLs
-
-*   **Mpesa:**
-    *   The `CallBackURL` in `backend/server.js` for STK push must be updated to your deployed backend's public URL (e.g., `https://api.yourdomain.com/api/payments/mpesa/callback`).
-    *   You need to register this URL with Safaricom on the Daraja portal for your application.
-*   **PayPal:**
-    *   **Webhook URL:** The `POST /api/payments/paypal/webhook` endpoint needs to be publicly accessible. You must register this URL (e.g., `https://api.yourdomain.com/api/payments/paypal/webhook`) in your PayPal Developer Dashboard for your application.
-    *   **Return/Cancel URLs:** The `return_url` and `cancel_url` in the `create-order` payload should point to your deployed frontend routes that handle these outcomes.
 
 ## III. Frontend Deployment (React)
 
@@ -120,3 +152,4 @@ Essential for security, especially with login and payment processing.
 *   Implement rate limiting and other protections against abuse if necessary.
 
 This guide provides a high-level overview. Specific steps will vary significantly based on the chosen hosting platforms and tools. Always refer to the official documentation of the services you use.
+```

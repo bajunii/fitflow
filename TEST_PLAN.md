@@ -102,270 +102,136 @@ Base URL: `/api/auth`
         *   Status Code: `400 Bad Request`
         *   Body: `{ "message": "Invalid credentials" }`
 
-## 2. Mpesa Payment API Tests (Simulated)
+## Payment Integration Testing
 
-Base URL: `/api/payments/mpesa`
+This section outlines the test plan for M-Pesa and PayPal payment integrations. All tests should be performed in their respective sandbox environments before deploying to production.
 
-### 2.1. STK Push Request (`POST /stk-push`)
+### A. M-Pesa Sandbox Testing
 
-**Objective:** Verify that the STK push request is initiated correctly (simulated) and that input validation works.
+**Prerequisites:**
+*   Valid M-Pesa sandbox credentials (MPESA_CONSUMER_KEY, MPESA_CONSUMER_SECRET, MPESA_SHORTCODE, MPESA_PASSKEY) configured in the backend's `.env` file.
+*   The `MPESA_CALLBACK_URL` in `.env` must be publicly accessible (use ngrok for local development).
+*   A Safaricom Daraja developer portal account with a registered test MSISDN (phone number) and sufficient test funds.
+*   `MPESA_ENVIRONMENT` set to `sandbox`.
 
-*   **Test Case 2.1.1: Successful STK Push Initiation**
-    *   **Description:** Initiate an STK push with valid amount and phone number.
-    *   **Request Payload:**
-        ```json
-        {
-          "amount": 10,
-          "phoneNumber": "254712345678"
-        }
-        ```
-    *   **Expected Response:**
-        *   Status Code: `200 OK`
-        *   Body: `{ "message": "STK push initiated successfully. Check your phone to complete payment.", "checkoutRequestID": "chk_..." }`
-    *   **Verification:**
-        *   A transaction is added to the in-memory `transactions` array with status 'pending'.
+**Test Cases:**
 
-*   **Test Case 2.1.2: STK Push with Invalid Phone Number**
-    *   **Description:** Initiate STK push with an invalid phone number format.
-    *   **Request Payload:**
-        ```json
-        {
-          "amount": 10,
-          "phoneNumber": "0712345678" // Missing country code or invalid format
-        }
-        ```
-    *   **Expected Response:**
-        *   Status Code: `400 Bad Request`
-        *   Body: `{ "message": "Invalid phone number format. Expected 254xxxxxxxxx" }`
+1.  **TC-MPESA-001: Successful Payment**
+    *   **Description:** Verify a complete successful M-Pesa STK push payment.
+    *   **Steps:**
+        1.  Navigate to the payment page in the frontend.
+        2.  Enter a valid test M-Pesa phone number (e.g., 2547xxxxxxxx) and a valid amount.
+        3.  Click "Pay with Mpesa".
+        4.  On the registered test phone, receive the STK push prompt.
+        5.  Enter the M-Pesa sandbox PIN to approve.
+    *   **Expected Results:**
+        *   Frontend: Shows an initiation message, then (ideally) a success confirmation.
+        *   Backend: A transaction record is created with initial status `pending`.
+        *   Backend: M-Pesa callback is received successfully.
+        *   Backend: Transaction status updates to `completed`. `mpesaReceiptNumber` and M-Pesa's response are stored in the transaction record.
+        *   Database: User's transaction list is updated.
 
-*   **Test Case 2.1.3: STK Push with Missing Amount**
-    *   **Description:** Initiate STK push without providing the amount.
-    *   **Request Payload:**
-        ```json
-        {
-          "phoneNumber": "254712345678"
-        }
-        ```
-    *   **Expected Response:**
-        *   Status Code: `400 Bad Request`
-        *   Body: `{ "message": "Amount and phoneNumber are required" }`
+2.  **TC-MPESA-002: User Cancels STK Push**
+    *   **Description:** Verify behavior when the user cancels the STK push on their phone.
+    *   **Steps:** (Follow TC-MPESA-001 up to step 4)
+        5.  On the phone, select the option to cancel the STK push.
+    *   **Expected Results:**
+        *   Backend: M-Pesa callback is received with a failure/cancellation code.
+        *   Backend: Transaction status updates to `failed`.
 
-### 2.2. Mpesa Callback (`POST /callback`)
+3.  **TC-MPESA-003: STK Push Timeout**
+    *   **Description:** Verify behavior when the STK push times out.
+    *   **Steps:** (Follow TC-MPESA-001 up to step 4)
+        5.  Do not interact with the STK push on the phone; let it time out (usually 1-2 minutes).
+    *   **Expected Results:**
+        *   Backend: M-Pesa callback is received indicating a timeout or failure.
+        *   Backend: Transaction status updates to `failed`.
 
-**Objective:** Verify that the backend can process simulated Mpesa callbacks and update transaction status.
+4.  **TC-MPESA-004: Invalid Phone Number Format**
+    *   **Description:** Test with an incorrectly formatted phone number.
+    *   **Steps:**
+        1.  Navigate to the payment page.
+        2.  Enter an invalid phone number (e.g., "12345") and an amount.
+        3.  Click "Pay with Mpesa".
+    *   **Expected Results:**
+        *   Frontend: Displays a validation error message.
+        *   Backend: The request should be rejected by backend validation, or by M-Pesa if it reaches the API. No transaction or a `failed` transaction should result.
 
-*   **Test Case 2.2.1: Successful Payment Callback**
-    *   **Description:** Simulate a successful payment callback from Mpesa.
-    *   **Prerequisites:** An STK push initiated, and its `checkoutRequestID` is known (e.g., "chk_123").
-    *   **Request Payload (Structure based on Safaricom documentation):**
-        ```json
-        {
-          "Body": {
-            "stkCallback": {
-              "MerchantRequestID": "merchant_req_123",
-              "CheckoutRequestID": "chk_123", // Match an existing pending transaction
-              "ResultCode": 0,
-              "ResultDesc": "The service request is processed successfully.",
-              "CallbackMetadata": {
-                "Item": [
-                  { "Name": "Amount", "Value": 10.00 },
-                  { "Name": "MpesaReceiptNumber", "Value": "RCI123ABC456" },
-                  { "Name": "TransactionDate", "Value": 20240728123045 },
-                  { "Name": "PhoneNumber", "Value": 254712345678 }
-                ]
-              }
-            }
-          }
-        }
-        ```
-    *   **Expected Response:**
-        *   Status Code: `200 OK`
-        *   Body: `{ "ResultCode": 0, "ResultDesc": "Callback processed successfully by server." }`
-    *   **Verification:**
-        *   The corresponding transaction in `transactions` array has its status updated to 'completed' and `mpesaReceiptNumber` stored.
+5.  **TC-MPESA-005: Payment with Zero or Negative Amount**
+    *   **Description:** Test with a zero or negative amount.
+    *   **Steps:**
+        1.  Navigate to the payment page.
+        2.  Enter a valid phone number and a zero or negative amount.
+        3.  Click "Pay with Mpesa".
+    *   **Expected Results:**
+        *   Frontend: Displays a validation error message.
+        *   Backend: Request rejected by validation.
 
-*   **Test Case 2.2.2: Failed Payment Callback (e.g., User Cancelled)**
-    *   **Description:** Simulate a failed payment callback (user cancelled).
-    *   **Prerequisites:** `checkoutRequestID` "chk_123" exists.
-    *   **Request Payload:**
-        ```json
-        {
-          "Body": {
-            "stkCallback": {
-              "MerchantRequestID": "merchant_req_123",
-              "CheckoutRequestID": "chk_123",
-              "ResultCode": 1032, // Example: Request cancelled by user
-              "ResultDesc": "Request cancelled by user."
-            }
-          }
-        }
-        ```
-    *   **Expected Response:**
-        *   Status Code: `200 OK`
-        *   Body: `{ "ResultCode": 0, "ResultDesc": "Callback processed successfully by server." }`
-    *   **Verification:**
-        *   Transaction status updated to 'failed', `resultCode` and `resultDesc` stored.
+### B. PayPal Sandbox Testing
 
-*   **Test Case 2.2.3: Callback for Non-existent Transaction**
-    *   **Description:** Simulate a callback for a `CheckoutRequestID` not in the system.
-    *   **Request Payload:**
-        ```json
-        {
-          "Body": {
-            "stkCallback": {
-              "MerchantRequestID": "merchant_req_404",
-              "CheckoutRequestID": "chk_NONEXISTENT",
-              "ResultCode": 0,
-              "ResultDesc": "Success"
-              // ... other fields
-            }
-          }
-        }
-        ```
-    *   **Expected Response:**
-        *   Status Code: `200 OK` (Server acknowledges, but logs error)
-        *   Body: `{ "ResultCode": 0, "ResultDesc": "Accepted by server, but transaction not found locally." }`
+**Prerequisites:**
+*   Valid PayPal sandbox credentials (PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET, PAYPAL_WEBHOOK_ID) configured in the backend's `.env` file.
+*   `PAYPAL_ENVIRONMENT` set to `sandbox`.
+*   PayPal developer account with sandbox buyer and seller accounts (ensure buyer account has funds).
+*   `PAYPAL_RETURN_URL` and `PAYPAL_CANCEL_URL` correctly configured (e.g., `http://localhost:3000/paypal/success`, `http://localhost:3000/paypal/cancel` for local testing).
 
-## 3. PayPal Payment API Tests (Simulated)
+**Test Cases:**
 
-Base URL: `/api/payments/paypal`
+1.  **TC-PAYPAL-001: Successful Payment**
+    *   **Description:** Verify a complete successful PayPal payment.
+    *   **Steps:**
+        1.  Navigate to the payment page in the frontend.
+        2.  Enter a valid amount for PayPal payment.
+        3.  Click "Create PayPal Order".
+        4.  User is redirected to the PayPal sandbox site.
+        5.  Log in with a sandbox buyer account.
+        6.  Approve the payment on the PayPal site.
+    *   **Expected Results:**
+        *   Backend: Transaction created with status `created` and `paypalOrderId`.
+        *   Frontend: User is redirected to the `PAYPAL_RETURN_URL` (e.g., `/paypal/success`).
+        *   Frontend (`/paypal/success` page): Displays "Processing payment..." then "Payment completed successfully!".
+        *   Backend: `/api/payments/paypal/capture-order/:orderID` endpoint is called by the success page.
+        *   Backend: Payment is captured. Transaction status updates to `completed`. `paypalCaptureId` and PayPal's response are stored.
+        *   Backend (Webhook): `CHECKOUT.ORDER.APPROVED` webhook is received, transaction status may update to `approved_by_user`.
+        *   Backend (Webhook): `PAYMENT.CAPTURE.COMPLETED` webhook is received, transaction status confirms/updates to `completed`.
+        *   Database: User's transaction list is updated.
 
-### 3.1. Create PayPal Order (`POST /create-order`)
+2.  **TC-PAYPAL-002: User Cancels on PayPal Site**
+    *   **Description:** Verify behavior when the user cancels the payment on the PayPal site.
+    *   **Steps:** (Follow TC-PAYPAL-001 up to step 5)
+        6.  On the PayPal site, click the "Cancel and return to merchant" (or similar) link.
+    *   **Expected Results:**
+        *   Frontend: User is redirected to the `PAYPAL_CANCEL_URL` (e.g., `/paypal/cancel`).
+        *   Frontend (`/paypal/cancel` page): Displays a "Payment Cancelled" message.
+        *   Backend: Transaction status remains `created` or may be marked `failed` if specific cancellation webhooks are handled. No capture occurs.
 
-**Objective:** Verify simulated PayPal order creation.
+3.  **TC-PAYPAL-003: Payment Denied/Failed by PayPal**
+    *   **Description:** Test a scenario where PayPal denies the payment (e.g., funding issue - may require specific sandbox card/account setup).
+    *   **Steps:** (Follow TC-PAYPAL-001 up to step 6, but ensure the payment is set to fail in PayPal sandbox)
+    *   **Expected Results:**
+        *   Frontend: User might be redirected to `PAYPAL_RETURN_URL` or `PAYPAL_CANCEL_URL` depending on when the failure occurs.
+        *   Frontend: Displays a payment failure message.
+        *   Backend (Webhook): `PAYMENT.CAPTURE.DENIED` (or similar) webhook is received.
+        *   Backend: Transaction status updates to `failed`.
 
-*   **Test Case 3.1.1: Successful Order Creation**
-    *   **Description:** Create a PayPal order with valid amount and currency.
-    *   **Request Payload:**
-        ```json
-        {
-          "amount": "20.00",
-          "currency": "USD"
-        }
-        ```
-    *   **Expected Response:**
-        *   Status Code: `201 Created`
-        *   Body: Contains `orderID` and `approveLink`. Example:
-            ```json
-            {
-              "orderID": "pp_ord_...",
-              "approveLink": "https://api-m.sandbox.paypal.com/checkoutnow?token=pp_ord_..."
-            }
-            ```
-    *   **Verification:**
-        *   Transaction added to `transactions` with `paymentGateway: 'paypal'` and `status: 'created'`.
+4.  **TC-PAYPAL-004: Webhook Signature Verification (Requires Full Implementation)**
+    *   **Description:** Test the PayPal webhook signature verification. (Note: Current implementation has a placeholder).
+    *   **Steps:**
+        1.  (Once fully implemented) Send a valid webhook event from PayPal sandbox dashboard to the backend's `/api/payments/paypal/webhook` endpoint.
+        2.  (Once fully implemented) Send a webhook event with an invalid/tampered signature or body.
+    *   **Expected Results:**
+        1.  Valid webhook is processed successfully.
+        2.  Invalid webhook is rejected with an HTTP 401 or 403 status.
 
-*   **Test Case 3.1.2: Create Order with Missing Fields**
-    *   **Description:** Attempt to create an order without amount or currency.
-    *   **Request Payload (example: missing currency):**
-        ```json
-        {
-          "amount": "20.00"
-        }
-        ```
-    *   **Expected Response:**
-        *   Status Code: `400 Bad Request`
-        *   Body: `{ "message": "Amount and currency are required" }`
-
-### 3.2. Capture PayPal Order (`POST /capture-order/:orderID`)
-
-**Objective:** Verify simulated PayPal order capture.
-
-*   **Test Case 3.2.1: Successful Order Capture**
-    *   **Description:** Capture a previously created PayPal order.
-    *   **Prerequisites:** A PayPal order created, `orderID` is known (e.g., "pp_ord_123").
-    *   **Request Path:** `/api/payments/paypal/capture-order/pp_ord_123`
-    *   **Request Payload:** (Empty, or could contain payer details if needed by API) `{}`
-    *   **Expected Response:**
-        *   Status Code: `200 OK`
-        *   Body: `{ "message": "Payment captured successfully", "orderID": "pp_ord_123", "status": "completed" }`
-    *   **Verification:**
-        *   Transaction status for "pp_ord_123" updated to 'completed'.
-
-*   **Test Case 3.2.2: Capture Non-existent Order**
-    *   **Description:** Attempt to capture an order that does not exist.
-    *   **Request Path:** `/api/payments/paypal/capture-order/pp_ord_INVALID`
-    *   **Request Payload:** `{}`
-    *   **Expected Response:**
-        *   Status Code: `404 Not Found`
-        *   Body: `{ "message": "Order not found or not a PayPal transaction" }`
-
-*   **Test Case 3.2.3: Capture Already Captured Order**
-    *   **Description:** Attempt to capture an order that has already been completed.
-    *   **Prerequisites:** Order "pp_ord_123" has been successfully captured.
-    *   **Request Path:** `/api/payments/paypal/capture-order/pp_ord_123`
-    *   **Request Payload:** `{}`
-    *   **Expected Response:**
-        *   Status Code: `400 Bad Request`
-        *   Body: `{ "message": "Order already captured" }`
-
-### 3.3. PayPal Webhook (`POST /webhook`)
-
-**Objective:** Verify that the backend can process simulated PayPal webhooks.
-
-*   **Test Case 3.3.1: Webhook for Payment Capture Completed**
-    *   **Description:** Simulate a `PAYMENT.CAPTURE.COMPLETED` webhook.
-    *   **Prerequisites:** A PayPal order "pp_ord_abc" exists (can be in 'created' or 'approved_by_user' state).
-    *   **Request Payload (Simplified PayPal Webhook Structure):**
-        ```json
-        {
-          "event_type": "PAYMENT.CAPTURE.COMPLETED",
-          "resource": {
-            "id": "capture_id_xyz", // This is the capture ID
-            "status": "COMPLETED",
-            "amount": { "currency_code": "USD", "value": "20.00" },
-            "links": [ // This structure might contain the order_id in a parent object in real webhooks.
-                       // For this simulation, we assume event.resource.id refers to order_id if not a capture event,
-                       // or we'd need to adjust how we find the transaction for capture events.
-                       // The current server.js code uses event.resource.id as orderID.
-                       // Let's assume for this test, the webhook refers to the orderID for simplicity.
-                       // A better webhook processing would look for `purchase_units[0].reference_id` or similar for custom order ID.
-                       // Or, if `event.resource.id` is the *capture* ID, the server logic would need to correlate it back to an order.
-                       // For the current code: `event.resource.id` is treated as the Order ID.
-                       // So, we'll use the `orderID` here.
-                       "id": "pp_ord_abc" // The Order ID
-          }
-          // ... other webhook details
-        }
-        ```
-    *   **Expected Response:**
-        *   Status Code: `200 OK`
-        *   Body: `"Webhook processed successfully"`
-    *   **Verification:**
-        *   Transaction "pp_ord_abc" status updated to 'completed'. `paypalCaptureDetails` and `paypalTransactionId` (capture ID) stored.
-
-*   **Test Case 3.3.2: Webhook for Checkout Order Approved**
-    *   **Description:** Simulate a `CHECKOUT.ORDER.APPROVED` webhook.
-    *   **Prerequisites:** PayPal order "pp_ord_def" exists, status 'created'.
-    *   **Request Payload:**
-        ```json
-        {
-          "event_type": "CHECKOUT.ORDER.APPROVED",
-          "resource": {
-            "id": "pp_ord_def", // Order ID
-            "status": "APPROVED"
-            // ...
-          }
-        }
-        ```
-    *   **Expected Response:**
-        *   Status Code: `200 OK`
-    *   **Verification:**
-        *   Transaction "pp_ord_def" status updated to 'approved_by_user'.
-
-*   **Test Case 3.3.3: Webhook with Unhandled Event Type**
-    *   **Description:** Send a webhook with an event type not explicitly handled.
-    *   **Request Payload:**
-        ```json
-        {
-          "event_type": "SOME.OTHER.EVENT",
-          "resource": { "id": "pp_ord_xyz" }
-        }
-        ```
-    *   **Expected Response:**
-        *   Status Code: `200 OK` (Server acknowledges, logs "Received unhandled PayPal webhook event_type")
-    *   **Verification:**
-        *   Transaction status for "pp_ord_xyz" (if exists) remains unchanged by this specific event.
+5.  **TC-PAYPAL-005: Payment with Zero or Negative Amount**
+    *   **Description:** Test with a zero or negative amount.
+    *   **Steps:**
+        1.  Navigate to the payment page.
+        2.  Enter a zero or negative amount for PayPal.
+        3.  Click "Create PayPal Order".
+    *   **Expected Results:**
+        *   Frontend: Displays a validation error message.
+        *   Backend: Request rejected by validation.
 
 ## 4. Workout Tracking API Tests
 
